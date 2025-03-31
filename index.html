@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' https:; img-src 'self' data: https:;">
+    <title>Options Delta Trader</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css">
+    <!-- Load React scripts in the correct order with matching versions -->
+    <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // Add error boundary to catch React errors
+        class ErrorBoundary extends React.Component {
+            constructor(props) {
+                super(props);
+                this.state = { hasError: false };
+            }
+
+            static getDerivedStateFromError(error) {
+                return { hasError: true };
+            }
+
+            componentDidCatch(error, errorInfo) {
+                console.error('React Error:', error, errorInfo);
+            }
+
+            render() {
+                if (this.state.hasError) {
+                    return <h1>Something went wrong. Please check the console for errors.</h1>;
+                }
+
+                return this.props.children;
+            }
+        }
+
+        // Broker Interface - defines the API contract for interacting with brokers
+        class BrokerInterface {
+            // Get available tickers
+            async getTickers() {
+                throw new Error("Method not implemented");
+            }
+            
+            // Get option chain for a specific ticker
+            async getOptionChain(ticker) {
+                throw new Error("Method not implemented");
+            }
+            
+            // Get current position details
+            async getCurrentPositions() {
+                throw new Error("Method not implemented");
+            }
+            
+            // Place an order
+            async placeOrder(orderDetails) {
+                throw new Error("Method not implemented");
+            }
+            
+            // Get portfolio delta
+            async getPortfolioDelta() {
+                throw new Error("Method not implemented");
+            }
+            
+            // Get option greeks for a specific option contract
+            async getOptionGreeks(optionContract) {
+                throw new Error("Method not implemented");
+            }
+        }
+        
+        // Mock implementation of the Broker Interface
+        class MockBroker extends BrokerInterface {
+            async getTickers() {
+                // Return mock tickers for Indian equity market
+                return [
+                    { symbol: "NIFTY", name: "Nifty 50", lastPrice: 22450.30 },
+                    { symbol: "BANKNIFTY", name: "Bank Nifty", lastPrice: 48320.15 },
+                    { symbol: "RELIANCE", name: "Reliance Industries", lastPrice: 2890.75 },
+                    { symbol: "INFY", name: "Infosys", lastPrice: 1560.40 },
+                    { symbol: "TCS", name: "Tata Consultancy Services", lastPrice: 3750.20 }
+                ];
+            }
+            
+            async getOptionChain(ticker) {
+                // Return mock option chain for the given ticker
+                const expiryDates = ["27-Jun-2024", "25-Jul-2024", "29-Aug-2024"];
+                const strikes = [];
+                
+                // Generate strikes around the current price
+                const basePrice = ticker === "NIFTY" ? 22450 : 48320;
+                for (let i = -10; i <= 10; i++) {
+                    strikes.push(basePrice + (i * (ticker === "NIFTY" ? 100 : 500)));
+                }
+                
+                const options = [];
+                expiryDates.forEach(expiry => {
+                    strikes.forEach(strike => {
+                        // Call option
+                        options.push({
+                            type: "CE",
+                            strike: strike,
+                            expiry: expiry,
+                            symbol: `${ticker}${expiry.split('-')[0]}${expiry.split('-')[1]}${strike}CE`,
+                            lastPrice: Math.random() * 500 + 50,
+                            bidPrice: Math.random() * 500 + 45,
+                            askPrice: Math.random() * 500 + 55,
+                            volume: Math.floor(Math.random() * 10000),
+                            openInterest: Math.floor(Math.random() * 50000),
+                            delta: Math.random() * 0.5 + 0.5, // Call deltas between 0.5 and 1.0
+                            gamma: Math.random() * 0.01,
+                            theta: -Math.random() * 10,
+                            vega: Math.random() * 20
+                        });
+                        
+                        // Put option
+                        options.push({
+                            type: "PE",
+                            strike: strike,
+                            expiry: expiry,
+                            symbol: `${ticker}${expiry.split('-')[0]}${expiry.split('-')[1]}${strike}PE`,
+                            lastPrice: Math.random() * 500 + 50,
+                            bidPrice: Math.random() * 500 + 45,
+                            askPrice: Math.random() * 500 + 55,
+                            volume: Math.floor(Math.random() * 10000),
+                            openInterest: Math.floor(Math.random() * 50000),
+                            delta: -Math.random() * 0.5, // Put deltas between -0.5 and 0
+                            gamma: Math.random() * 0.01,
+                            theta: -Math.random() * 10,
+                            vega: Math.random() * 20
+                        });
+                    });
+                });
+                
+                return options;
+            }
+            
+            async getCurrentPositions() {
+                // Return mock current positions
+                return [
+                    {
+                        symbol: "NIFTY27Jun2224500CE",
+                        quantity: 2,
+                        avgPrice: 250.75,
+                        currentPrice: 275.30,
+                        pnl: 49.10,
+                        delta: 0.65
+                    },
+                    {
+                        symbol: "NIFTY27Jun2222000PE",
+                        quantity: 1,
+                        avgPrice: 120.50,
+                        currentPrice: 95.20,
+                        pnl: -25.30,
+                        delta: -0.25
+                    },
+                    {
+                        symbol: "BANKNIFTY25Jul2448000CE",
+                        quantity: 3,
+                        avgPrice: 850.25,
+                        currentPrice: 920.40,
+                        pnl: 210.45,
+                        delta: 0.72
+                    }
+                ];
+            }
+            
+            async placeOrder(orderDetails) {
+                // Simulate order placement
+                console.log("Order placed:", orderDetails);
+                
+                // Return mock order confirmation
+                return {
+                    orderId: "ORD" + Math.floor(Math.random() * 1000000),
+                    status: "CONFIRMED",
+                    message: "Order placed successfully",
+                    details: orderDetails,
+                    timestamp: new Date().toISOString()
+                };
+            }
+            
+            async getPortfolioDelta() {
+                // Calculate and return mock portfolio delta
+                const positions = await this.getCurrentPositions();
+                let totalDelta = positions.reduce((sum, position) => {
+                    return sum + (position.delta * position.quantity);
+                }, 0);
+                
+                return {
+                    totalDelta: parseFloat(totalDelta.toFixed(2)),
+                    breakdown: positions.map(p => ({
+                        symbol: p.symbol,
+                        contribution: parseFloat((p.delta * p.quantity).toFixed(2))
+                    }))
+                };
+            }
+            
+            async getOptionGreeks(optionContract) {
+                // Return mock option greeks for the given contract
+                return {
+                    symbol: optionContract,
+                    delta: Math.random() * (optionContract.includes("CE") ? 1 : 0) + (optionContract.includes("PE") ? -0.5 : 0.5),
+                    gamma: Math.random() * 0.01,
+                    theta: -Math.random() * 10,
+                    vega: Math.random() * 20,
+                    rho: Math.random() * 5
+                };
+            }
+        }
+        
+        // Main App Component
+        const App = () => {
+            const [selectedTicker, setSelectedTicker] = React.useState("");
+            const [tickers, setTickers] = React.useState([]);
+            const [optionChain, setOptionChain] = React.useState([]);
+            const [positions, setPositions] = React.useState([]);
+            const [portfolioDelta, setPortfolioDelta] = React.useState(null);
+            const [targetDelta, setTargetDelta] = React.useState(0);
+            const [suggestions, setSuggestions] = React.useState([]);
+            const [selectedExpiry, setSelectedExpiry] = React.useState("");
+            const [expiryDates, setExpiryDates] = React.useState([]);
+            
+            // Initialize broker
+            const broker = React.useRef(new MockBroker());
+            
+            // Load initial data
+            React.useEffect(() => {
+                const loadInitialData = async () => {
+                    try {
+                        const tickersData = await broker.current.getTickers();
+                        setTickers(tickersData);
+                        
+                        if (tickersData.length > 0) {
+                            setSelectedTicker(tickersData[0].symbol);
+                        }
+                        
+                        const positionsData = await broker.current.getCurrentPositions();
+                        setPositions(positionsData);
+                        
+                        const deltaData = await broker.current.getPortfolioDelta();
+                        setPortfolioDelta(deltaData);
+                    } catch (error) {
+                        console.error("Error loading initial data:", error);
+                    }
+                };
+                
+                loadInitialData();
+            }, []);
+            
+            // Load option chain when ticker changes
+            React.useEffect(() => {
+                const loadOptionChain = async () => {
+                    if (!selectedTicker) return;
+                    
+                    try {
+                        const options = await broker.current.getOptionChain(selectedTicker);
+                        setOptionChain(options);
+                        
+                        // Extract unique expiry dates
+                        const uniqueExpiries = [...new Set(options.map(opt => opt.expiry))];
+                        setExpiryDates(uniqueExpiries);
+                        
+                        if (uniqueExpiries.length > 0) {
+                            setSelectedExpiry(uniqueExpiries[0]);
+                        }
+                    } catch (error) {
+                        console.error("Error loading option chain:", error);
+                    }
+                };
+                
+                loadOptionChain();
+            }, [selectedTicker]);
+            
+            // Generate trade suggestions based on target delta
+            const generateSuggestions = () => {
+                if (!portfolioDelta || !optionChain.length) return;
+                
+                const deltaDifference = targetDelta - portfolioDelta.totalDelta;
+                
+                // Filter options by selected expiry
+                const filteredOptions = optionChain.filter(opt => opt.expiry === selectedExpiry);
+                
+                // Sort options by how well they would help achieve the target delta
+                const sortedOptions = [...filteredOptions].sort((a, b) => {
+                    const aDeltaContribution = Math.abs(deltaDifference - a.delta);
+                    const bDeltaContribution = Math.abs(deltaDifference - b.delta);
+                    return aDeltaContribution - bDeltaContribution;
+                });
+                
+                // Take top 5 suggestions
+                const topSuggestions = sortedOptions.slice(0, 5).map(opt => {
+                    const quantity = Math.ceil(Math.abs(deltaDifference / opt.delta));
+                    return {
+                        ...opt,
+                        suggestedQuantity: quantity,
+                        totalDeltaContribution: parseFloat((opt.delta * quantity).toFixed(2)),
+                        estimatedCost: parseFloat((opt.lastPrice * quantity).toFixed(2))
+                    };
+                });
+                
+                setSuggestions(topSuggestions);
+            };
+            
+            // Place an order
+            const placeOrder = async (option, quantity) => {
+                try {
+                    const orderDetails = {
+                        symbol: option.symbol,
+                        quantity: quantity,
+                        price: option.lastPrice,
+                        orderType: "MARKET",
+                        transactionType: "BUY"
+                    };
+                    
+                    const response = await broker.current.placeOrder(orderDetails);
+                    alert(`Order placed successfully! Order ID: ${response.orderId}`);
+                    
+                    // Refresh positions and portfolio delta
+                    const positionsData = await broker.current.getCurrentPositions();
+                    setPositions(positionsData);
+                    
+                    const deltaData = await broker.current.getPortfolioDelta();
+                    setPortfolioDelta(deltaData);
+                } catch (error) {
+                    console.error("Error placing order:", error);
+                    alert("Failed to place order. Please try again.");
+                }
+            };
+            
+            return (
+                <div className="container mt-4">
+                    <h1 className="mb-4">Options Delta Trader</h1>
+                    
+                    <div className="row mb-4">
+                        <div className="col-md-6">
+                            <div className="card">
+                                <div className="card-header">Portfolio Delta</div>
+                                <div className="card-body">
+                                    <h3>Current Delta: {portfolioDelta ? portfolioDelta.totalDelta : "Loading..."}</h3>
+                                    
+                                    <div className="mt-3">
+                                        <label className="form-label">Target Delta:</label>
+                                        <input 
+                                            type="number" 
+                                            className="form-control" 
+                                            value={targetDelta} 
+                                            onChange={(e) => setTargetDelta(parseFloat(e.target.value))} 
+                                            step="0.1"
+                                        />
+                                        <button 
+                                            className="btn btn-primary mt-2" 
+                                            onClick={generateSuggestions}
+                                        >
+                                            Generate Suggestions
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div className="col-md-6">
+                            <div className="card">
+                                <div className="card-header">Current Positions</div>
+                                <div className="card-body">
+                                    <table className="table table-sm">
+                                        <thead>
+                                            <tr>
+                                                <th>Symbol</th>
+                                                <th>Qty</th>
+                                                <th>Price</th>
+                                                <th>P&L</th>
+                                                <th>Delta</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {positions.map((position, index) => (
+                                                <tr key={index}>
+                                                    <td>{position.symbol}</td>
+                                                    <td>{position.quantity}</td>
+                                                    <td>₹{position.currentPrice.toFixed(2)}</td>
+                                                    <td className={position.pnl >= 0 ? "text-success" : "text-danger"}>
+                                                        ₹{position.pnl.toFixed(2)}
+                                                    </td>
+                                                    <td>{position.delta.toFixed(2)}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div className="row mb-4">
+                        <div className="col-12">
+                            <div className="card">
+                                <div className="card-header">Trade Suggestions</div>
+                                <div className="card-body">
+                                    {suggestions.length > 0 ? (
+                                        <table className="table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Symbol</th>
+                                                    <th>Type</th>
+                                                    <th>Strike</th>
+                                                    <th>Expiry</th>
+                                                    <th>Price</th>
+                                                    <th>Delta</th>
+                                                    <th>Qty</th>
+                                                    <th>Delta Contribution</th>
+                                                    <th>Est. Cost</th>
+                                                    <th>Action</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {suggestions.map((suggestion, index) => (
+                                                    <tr key={index}>
+                                                        <td>{suggestion.symbol}</td>
+                                                        <td>{suggestion.type}</td>
+                                                        <td>{suggestion.strike}</td>
+                                                        <td>{suggestion.expiry}</td>
+                                                        <td>₹{suggestion.lastPrice.toFixed(2)}</td>
+                                                        <td>{suggestion.delta.toFixed(2)}</td>
+                                                        <td>{suggestion.suggestedQuantity}</td>
+                                                        <td>{suggestion.totalDeltaContribution}</td>
+                                                        <td>₹{suggestion.estimatedCost}</td>
+                                                        <td>
+                                                            <button 
+                                                                className="btn btn-sm btn-success"
+                                                                onClick={() => placeOrder(suggestion, suggestion.suggestedQuantity)}
+                                                            >
+                                                                Buy
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    ) : (
+                                        <p>No suggestions available. Set a target delta and click "Generate Suggestions".</p>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div className="row">
+                        <div className="col-12">
+                            <div className="card">
+                                <div className="card-header">
+                                    <div className="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <select 
+                                                className="form-select" 
+                                                value={selectedTicker} 
+                                                onChange={(e) => setSelectedTicker(e.target.value)}
+                                            >
+                                                {tickers.map((ticker, index) => (
+                                                    <option key={index} value={ticker.symbol}>
+                                                        {ticker.symbol} - {ticker.name} (₹{ticker.lastPrice})
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <select 
+                                                className="form-select" 
+                                                value={selectedExpiry} 
+                                                onChange={(e) => setSelectedExpiry(e.target.value)}
+                                            >
+                                                {expiryDates.map((date, index) => (
+                                                    <option key={index} value={date}>{date}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="card-body">
+                                    <div className="table-responsive" style={{maxHeight: "400px", overflowY: "auto"}}>
+                                        <table className="table table-sm">
+                                            <thead className="sticky-top bg-light">
+                                                <tr>
+                                                    <th>Symbol</th>
+                                                    <th>Type</th>
+                                                    <th>Strike</th>
+                                                    <th>Bid</th>
+                                                    <th>Ask</th>
+                                                    <th>Last</th>
+                                                    <th>Volume</th>
+                                                    <th>OI</th>
+                                                    <th>Delta</th>
+                                                    <th>Action</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {optionChain
+                                                    .filter(option => option.expiry === selectedExpiry)
+                                                    .sort((a, b) => a.strike - b.strike)
+                                                    .map((option, index) => (
+                                                        <tr key={index}>
+                                                            <td>{option.symbol}</td>
+                                                            <td>{option.type}</td>
+                                                            <td>{option.strike}</td>
+                                                            <td>₹{option.bidPrice.toFixed(2)}</td>
+                                                            <td>₹{option.askPrice.toFixed(2)}</td>
+                                                            <td>₹{option.lastPrice.toFixed(2)}</td>
+                                                            <td>{option.volume}</td>
+                                                            <td>{option.openInterest}</td>
+                                                            <td>{option.delta.toFixed(2)}</td>
+                                                            <td>
+                                                                <button 
+                                                                    className="btn btn-sm btn-primary me-1"
+                                                                    onClick={() => placeOrder(option, 1)}
+                                                                >
+                                                                    Buy
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+        
+        // Wrap the App render in error boundary and add error handling
+        try {
+            const root = ReactDOM.createRoot(document.getElementById('root'));
+            root.render(
+                <ErrorBoundary>
+                    <App />
+                </ErrorBoundary>
+            );
+        } catch (error) {
+            console.error('Failed to render app:', error);
+            document.getElementById('root').innerHTML = 'Failed to load application. Please check the console for errors.';
+        }
+    </script>
+</body>
+</html>
